@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent">
+
+    <Button
+        android:id="@+id/control"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:text="На контроле"
+        android:onClick="control"
+        android:textSize="14pt"
+        android:layout_gravity="center"/>
+
+    <Button
+        android:id="@+id/archive"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:onClick="archive"
+        android:text="Архив"
+        android:textSize="14pt"
+        android:layout_gravity="center" />
+
+</LinearLayout>
