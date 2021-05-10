@@ -5,30 +5,20 @@
     android:layout_height="fill_parent">
 
     <Button
-        android:id="@+id/control"
+        android:id="@+id/sendDataButton"
         android:layout_width="250dp"
         android:layout_height="wrap_content"
-        android:text="На контроле"
-        android:onClick="control"
+        android:text="Отправить данные"
+        android:onClick="sendData"
         android:textSize="14pt"
         android:layout_gravity="center"/>
-
     <Button
-        android:id="@+id/archive"
+        android:id="@+id/getDBDataButton"
         android:layout_width="250dp"
         android:layout_height="wrap_content"
-        android:onClick="archive"
-        android:text="Архив"
+        android:text="Получить данные"
+        android:onClick="getDBData"
         android:textSize="14pt"
-        android:layout_gravity="center" />
-
-    <Button
-        android:id="@+id/web"
-        android:layout_width="250dp"
-        android:layout_height="wrap_content"
-        android:onClick="web"
-        android:text="Веб"
-        android:textSize="14pt"
-        android:layout_gravity="center" />
+        android:layout_gravity="center"/>
 
 </LinearLayout>
