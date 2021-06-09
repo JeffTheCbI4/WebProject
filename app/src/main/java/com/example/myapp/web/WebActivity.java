@@ -4,53 +4,89 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.util.Base64;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Spinner;
+import android.widget.SpinnerAdapter;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.example.myapp.DatabaseHelper;
 import com.example.myapp.R;
-import com.example.myapp.web.serializable.DataArray;
-import com.example.myapp.web.serializable.SerializablePlusRequest;
-import com.sibsiu.dbwebservice.wsdl.PlusRequest;
-import com.example.myapp.web.serializable.TestGetDataRequest;
+import com.example.myapp.web.serializable.Table;
+import com.example.myapp.web.serializable.Row;
 
 import org.ksoap2.SoapEnvelope;
-import org.ksoap2.serialization.MarshalBase64;
 import org.ksoap2.serialization.PropertyInfo;
 import org.ksoap2.serialization.SoapObject;
-import org.ksoap2.serialization.SoapPrimitive;
 import org.ksoap2.serialization.SoapSerializationEnvelope;
 import org.ksoap2.transport.HttpTransportSE;
+import org.xmlpull.v1.XmlPullParserException;
 
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBElement;
-import javax.xml.bind.Marshaller;
-import javax.xml.bind.util.JAXBSource;
-import javax.xml.namespace.QName;
+import java.io.IOException;
+import java.sql.Blob;
+import java.util.ArrayList;
+import java.util.HashMap;
 
 public class WebActivity extends AppCompatActivity {
-    Button sendDataButton;
-    Button getDBDataButton;
 
-    String sqlQuery;
-    DatabaseHelper databaseHelper;
-    SQLiteDatabase db;
-    TestGetDataRequest dataRequest;
+    long id_user = 0;
 
-    static final String URL = "http://10.0.2.2:9898/ws/webservice";
-    static final String NAMESPACE = "http://webservice";
+    protected Button sendDataButton;
+    protected Spinner spinUser;
+    //protected EditText usernameEditText;
+    protected EditText passwordEditText;
+
+    protected DatabaseHelper databaseHelper;
+    protected AlertDialog.Builder alertBuilder;
+    ArrayList<String> userList;
+    protected String username;
+    protected String password;
+
+    protected static final String URL = "http://10.0.2.2:9898/ws/webservice";
+    protected static final String NAMESPACE = "http://webservice";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_web);
-        sendDataButton = (Button) findViewById(R.id.sendDataButton);
-        getDBDataButton = (Button) findViewById(R.id.getDBDataButton);
+        sendDataButton = findViewById(R.id.sendDataButton);
+        spinUser = findViewById(R.id.spinUser);
+        //usernameEditText = findViewById(R.id.usernameEditText);
+        passwordEditText = findViewById(R.id.passwordEditText);
         databaseHelper = new DatabaseHelper(this);
-        dataRequest = new TestGetDataRequest();
+        alertBuilder = new AlertDialog.Builder(this);
+        alertBuilder.setCancelable(true);
+
+        try {
+            userList = new GetUsersTask().execute().get();
+            spinUser.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                public void onItemSelected(AdapterView<?> parent,
+                                           View itemSelected, int selectedItemPosition, long selectedId) {
+                    id_user = selectedId;
+                }
+                public void onNothingSelected(AdapterView<?> parent) {
+                }
+            });
+
+            ArrayAdapter<String> usersArrayAdapter = new ArrayAdapter<String>
+                    (this, android.R.layout.simple_spinner_item, userList.toArray(new String[0]));
+            usersArrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinUser.setAdapter(usersArrayAdapter);
+
+            alertBuilder.setMessage("Список пользователей успешно получен")
+                    .create()
+                    .show();
+        } catch (Exception ex){
+            alertBuilder.setMessage(ex.getMessage())
+                    .create()
+                    .show();
+        }
     }
 
     @Override
@@ -58,111 +94,218 @@ public class WebActivity extends AppCompatActivity {
         super.onResume();
     }
 
-    public void getDBData(View view) {
-        db = databaseHelper.getReadableDatabase();
-        sqlQuery = "SELECT STB._id, tab1.date as date, ORG.nameOrg as org, locats.nameloc as loc, tab1.namest as status, texts.name1 as desc\n" +
-                "FROM\n" +
-                "(((((SELECT idstb, MAX(begins) as date, idstatusname, statusN.namest \n" +
-                "FROM STATUS INNER JOIN statusN ON STATUS.idstatusname = statusN._id\n" +
-                "GROUP BY (idstb)) AS tab1) \n" +
-                "INNER JOIN STB ON STB._id=tab1.idstb) \n" +
-                "INNER JOIN ORG ON STB.idorg = ORG._id) \n" +
-                "INNER JOIN locats ON STB.idl = locats._id) \n" +
-                "INNER JOIN texts ON STB.idt = texts._id\n" +
-                "WHERE tab1.idstatusname < 90\n" +
-                "ORDER BY STB._id DESC";
+    //Главный метод, срабатывающий при нажатии на кнопку sendDataButton
+    public void sendLocalDataAndGetServerData(View view) {
+        username = spinUser.getSelectedItem().toString();
+        password = passwordEditText.getText().toString();
+
+        AlertDialog.Builder alertBuilder = new AlertDialog.Builder(this);
+        alertBuilder.setCancelable(true);
+
+        if (username.isEmpty() || password.isEmpty()){
+            alertBuilder.setMessage("Имя или пароль не введены.")
+                    .create()
+                    .show();
+            return;
+        }
+
+        WebAsyncTask webAsyncTask = new WebAsyncTask();
+        try {
+            webAsyncTask.execute();
+            short result = webAsyncTask.get();
+            switch (result){
+                case 0: alertBuilder.setMessage("Обмен данными прошёл успешно");
+                    break;
+                case 1: alertBuilder.setMessage("Не удалось отправить данные");
+            }
+            alertBuilder.create()
+                    .show();
+        }
+        catch (Exception ex) {
+            ex.printStackTrace();
+            alertBuilder.setMessage("Ошибка")
+                    .create()
+                    .show();
+        }
+    }
+
+    //Метод, ивлекающий данные из таблицы (либо STB, либо STATUS)
+    protected Table getLocalData(String tableName) {
+
+        Table table = new Table();
+        SQLiteDatabase db = databaseHelper.getReadableDatabase();
+        String sqlQuery = "";
+
+        switch (tableName){
+            case "stb": sqlQuery = "SELECT * FROM STB WHERE mobiles IS 1";
+            break;
+            case "status": sqlQuery = "SELECT * FROM STATUS WHERE mobiles IS 1";
+        }
+
         Cursor cursor = db.rawQuery(sqlQuery, null);
         cursor.moveToFirst();
         while (cursor.moveToNext()) {
-            TestGetDataRequest.Data data = new TestGetDataRequest.Data();
-            data.setId(cursor.getString(0));
-            data.setDate(cursor.getString(1));
-            data.setOrg(cursor.getString(2));
-            data.setLoc(cursor.getString(3));
-            data.setStatus(cursor.getString(4));
-            data.setDesc(cursor.getString(5));
-            dataRequest.getData().add(data);
+            Row row = new Row();
+            for (int i = 0; i < cursor.getColumnCount(); i++){
+                if (cursor.getType(i) == cursor.FIELD_TYPE_BLOB){
+                    byte[] blob = cursor.getBlob(i);
+                    String base64 = Base64.encodeToString(blob, Base64.DEFAULT);
+                    row.add(base64);
+                }
+                row.add(cursor.getString(i));
+            }
+            table.add(row);
         }
-        System.out.println("Данные получил");
         cursor.close();
         db.close();
+        System.out.println("Данные получил");
+        return table;
     }
 
-    //Отправить запрос с данными вебсерверу
-    public void sendData(View view) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setCancelable(true);
+    //Занимается отправкой и принятием сообщений
+    protected class WebAsyncTask extends AsyncTask<Void, Void, Short> {
 
-        WebAsyncTask myTask = new WebAsyncTask();
-        myTask.execute();
-        try {
-            Boolean success = myTask.get();
-            String message = success ? "Сообщение отправлено" : "Ошибка";
-            builder.setMessage(message);
-            AlertDialog alertSuccess = builder.create();
-            alertSuccess.show();
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            builder.setMessage("Даже get не сработал");
-            AlertDialog alertSuccess = builder.create();
-            alertSuccess.show();
+        @Override
+        protected Short doInBackground(Void... voids) {
+            try {
+                String METHOD_NAME = "dataExchangeRequest";
+                String SOAP_ACTION = NAMESPACE + "/" + METHOD_NAME;
+
+                SoapObject dataExchangeRequest = new SoapObject(NAMESPACE, METHOD_NAME);
+                setDataExchangeRequest(dataExchangeRequest);
+
+                SoapSerializationEnvelope envelope = new SoapSerializationEnvelope(SoapEnvelope.VER11);
+                setEnvelope(envelope, dataExchangeRequest);
+
+                HttpTransportSE httpTransportSE = new HttpTransportSE(URL);
+                httpTransportSE.call(SOAP_ACTION, envelope);
+
+                SoapObject response = (SoapObject) envelope.bodyIn;
+                SoapObject table = (SoapObject) response.getProperty(0);
+                System.out.println(response.getPropertyInfo(0).name);
+                for (int i = 0; i < table.getPropertyCount(); i++){
+                    SoapObject row = (SoapObject) table.getProperty(i);
+                    for (int j = 0; j < row.getPropertyCount(); j++){
+                        System.out.print(" " + row.getProperty(j));
+                    }
+                    System.out.println("");
+                }
+                return 0;
+            } catch (IOException | XmlPullParserException e) {
+                e.printStackTrace();
+                return 1;
+            }
         }
     }
 
-    //Первый аргумент - входные данные, второй - промежуточные, третий - выходные данные
-    protected class WebAsyncTask extends AsyncTask<Void, Void, Boolean> {
+    //Настраивает soap-конверт
+    protected void setEnvelope(SoapSerializationEnvelope envelope, SoapObject body) {
+        envelope.setAddAdornments(false);
+        envelope.addMapping(NAMESPACE, "table", Table.class);
+        envelope.addMapping(NAMESPACE, "row", Row.class);
+        envelope.setOutputSoapObject(body);
+    }
+
+    //Настраивает soap-объект в соответствии с DataExchangeRequest
+    protected void setDataExchangeRequest(SoapObject request) {
+        Table stb = getLocalData("stb");
+        Table status = getLocalData("status");
+
+        PropertyInfo piUsername = new PropertyInfo();
+        piUsername.setNamespace(NAMESPACE);
+        piUsername.setName("username");
+        piUsername.setValue(username);
+        piUsername.setType(String.class);
+
+        PropertyInfo piPassword = new PropertyInfo();
+        piPassword.setNamespace(NAMESPACE);
+        piPassword.setName("password");
+        piPassword.setValue(password);
+        piPassword.setType(String.class);
+
+        PropertyInfo piSTB = new PropertyInfo();
+        piSTB.setNamespace(NAMESPACE);
+        piSTB.setName("stb");
+        piSTB.setValue(stb);
+        piSTB.setType(Table.class);
+
+        PropertyInfo piStatus = new PropertyInfo();
+        piStatus.setNamespace(NAMESPACE);
+        piStatus.setName("status");
+        piStatus.setValue(status);
+        piStatus.setType(Table.class);
+
+        request.addProperty(piUsername)
+                .addProperty(piPassword)
+                .addProperty(piSTB)
+                .addProperty(piStatus);
+    }
+
+
+    protected class GetUsersTask extends AsyncTask<Void, Void, ArrayList<String>> {
+
+        @Override
+        protected ArrayList<String> doInBackground(Void... voids) {
+            String METHOD_NAME = "getUsersRequest";
+            String SOAP_ACTION = "http://webservice/" + METHOD_NAME;
+
+            SoapObject soapObject = new SoapObject(NAMESPACE, METHOD_NAME);
+            SoapSerializationEnvelope envelope = new SoapSerializationEnvelope(SoapEnvelope.VER11);
+            envelope.setOutputSoapObject(soapObject);
+
+            HttpTransportSE httpTransportSE = new HttpTransportSE(URL);
+            try {
+                httpTransportSE.call(SOAP_ACTION, envelope);
+                SoapObject response = (SoapObject) envelope.bodyIn;
+
+                ArrayList<String> userList = new ArrayList<String>();
+                SoapObject usersen = (SoapObject) response.getProperty(0);
+                for (int i = 0; i < usersen.getPropertyCount(); i++){
+                    SoapObject row = (SoapObject) usersen.getProperty(i);
+                    String username = row.getPropertyAsString(1);
+                    userList.add(username);
+                }
+                return userList;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
+    }
+
+    //Тестовый метод. Не используется. Первый аргумент - входные данные, второй - промежуточные, третий - выходные данные
+    protected class WAsyncTask extends AsyncTask<Void, Void, Boolean> {
 
         @Override
         protected Boolean doInBackground(Void... voids) {
             try {
-//                SerializablePlusRequest plusRequest = new SerializablePlusRequest(1,2, "");
-//                JAXBContext contextData = JAXBContext.newInstance("com.sibsiu.dbwebservice.wsdl");
-//                StringWriter writer = new StringWriter();
-//                Marshaller m = contextData.createMarshaller();
-//                m.marshal(plusRequest, writer);
-//                System.out.println("XML реквест:" + writer.toString());
-
-                TestGetDataRequest.Data data1 = new TestGetDataRequest.Data();
-                data1.setId("1");
-                data1.setDate("Date1");
-                data1.setOrg("Org1");
-                data1.setLoc("Loc1");
-                data1.setStatus("Status1");
-                data1.setDesc("Desc1");
-
-                TestGetDataRequest.Data data2 = new TestGetDataRequest.Data();
-                data2.setId("2");
-                data2.setDate("Date2");
-                data2.setOrg("Org2");
-                data2.setLoc("Loc2");
-                data2.setStatus("Status2");
-                data2.setDesc("Desc2");
-
-                DataArray dataArray = new DataArray();
-                dataArray.add(data1);
-                dataArray.add(data2);
-
-                String METHOD_NAME = "testGetDataRequest";
-                String SOAP_ACTION = NAMESPACE + "/" + METHOD_NAME;
+                String METHOD_NAME = "getDataFromServerRequest";
+                String SOAP_ACTION = "http://webservice/" + METHOD_NAME;
 
                 SoapObject soapObject = new SoapObject(NAMESPACE, METHOD_NAME);
 
-                PropertyInfo arrayPI = new PropertyInfo();
-                arrayPI.setName("data");
-                arrayPI.setValue(dataArray);
-                arrayPI.setType(DataArray.class);
-                soapObject.addProperty(arrayPI);
-
                 SoapSerializationEnvelope envelope = new SoapSerializationEnvelope(SoapEnvelope.VER11);
-                //envelope.addMapping("http://webservice", "testGetDataRequest", TestGetDataRequest.class);
-                envelope.addMapping("http://webservice", "dataLine", TestGetDataRequest.Data.class);
-                envelope.addMapping(NAMESPACE, "data", DataArray.class);
+                //envelope.implicitTypes = true;
+                envelope.setAddAdornments(false);
+                //envelope.avoidExceptionForUnknownProperty = true;
+                //envelope.addMapping(NAMESPACE, "testGetDataRequest", SerializableTestGetDataRequest.class);
+                //envelope.addMapping(NAMESPACE, "plusRequest", SerializablePlusRequest.class);
+                //envelope.addMapping(NAMESPACE, "data", SerializableData.class);
+                //envelope.addMapping(NAMESPACE, "testResponse", SerializableTestResponse.class);
                 envelope.setOutputSoapObject(soapObject);
 
                 //10.0.2.2 - адрес связи с вебсервисом на локальном компьютере с эмулятора
                 HttpTransportSE httpTransportSE = new HttpTransportSE(URL);
-                httpTransportSE.setXmlVersionTag("<?xml version=\"1.1\" encoding=\"utf-8\"?>");
                 httpTransportSE.call(SOAP_ACTION, envelope);
+                SoapObject response = (SoapObject) envelope.bodyIn;
+                for (int i = 0; i < response.getPropertyCount(); i++){
+                    System.out.println(response.getProperty(i));
+                }
+//                System.out.println("Response: " + response.getProperty("response") + " "
+//                        + response.getProperty("answer") + " " + response.getProperty(2) + " " +
+//                        response.getPropertyCount() + " " + response.getProperty(4));
+//                SerializableTestResponse response = (SerializableTestResponse) envelope.bodyIn;
+//                System.out.println("Response: " + response.getResponse() + " " + response.getAnswer() + response.getArray());
             } catch (Exception ex) {
                 ex.printStackTrace();
                 return false;

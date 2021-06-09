@@ -4,20 +4,39 @@
     android:layout_width="fill_parent"
     android:layout_height="fill_parent">
 
+    <TextView
+        android:id="@+id/userText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="15dp"
+        android:text="Выберите пользователя для подключения к базе данных." />
+
+    <Spinner
+        android:id="@+id/spinUser"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"/>
+
+<!--    <EditText-->
+<!--        android:id="@+id/usernameEditText"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="wrap_content"-->
+<!--        android:hint="Имя пользователя"-->
+<!--        android:layout_marginTop="15dp"/>-->
+
+    <EditText
+        android:id="@+id/passwordEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Пароль"
+        android:layout_marginTop="15dp"/>
+
     <Button
         android:id="@+id/sendDataButton"
         android:layout_width="250dp"
         android:layout_height="wrap_content"
         android:text="Отправить данные"
-        android:onClick="sendData"
-        android:textSize="14pt"
-        android:layout_gravity="center"/>
-    <Button
-        android:id="@+id/getDBDataButton"
-        android:layout_width="250dp"
-        android:layout_height="wrap_content"
-        android:text="Получить данные"
-        android:onClick="getDBData"
+        android:onClick="sendLocalDataAndGetServerData"
         android:textSize="14pt"
         android:layout_gravity="center"/>
 

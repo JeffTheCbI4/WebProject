@@ -3,11 +3,10 @@ package com.example.myapp.web.serializable;
 import org.ksoap2.serialization.KvmSerializable;
 import org.ksoap2.serialization.PropertyInfo;
 
-import java.util.ArrayList;
 import java.util.Hashtable;
+import java.util.Vector;
 
-public class DataArray<T> extends ArrayList<TestGetDataRequest.Data> implements KvmSerializable {
-
+public class Table extends Vector<Row> implements KvmSerializable {
     @Override
     public Object getProperty(int index) {
         return this.get(index);
@@ -15,18 +14,19 @@ public class DataArray<T> extends ArrayList<TestGetDataRequest.Data> implements 
 
     @Override
     public int getPropertyCount() {
-        return 1;
+        return this.elementCount;
     }
 
     @Override
     public void setProperty(int index, Object value) {
-        this.add((TestGetDataRequest.Data) value);
+        this.add((Row) value);
     }
 
     @Override
     public void getPropertyInfo(int index, Hashtable properties, PropertyInfo info) {
-        info.setName("data");
-        info.setType(TestGetDataRequest.Data.class);
+        info.setNamespace("http://webservice");
+        info.setName("row");
+        info.setType(Row.class);
         info.setValue(this.get(index));
     }
 }
